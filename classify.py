@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 from sklearn.datasets import make_classification
 from sklearn.ensemble import ExtraTreesClassifier
 from sklearn import preprocessing
+from scipy import stats
 
 
 pd.set_option('mode.use_inf_as_null', True)
@@ -29,19 +30,20 @@ pd.set_option('mode.use_inf_as_null', True)
 genres = ["blues","classical","country","disco","hiphop","jazz","metal","pop","reggae","rock"]
 
 
-def classify(X,y,pipe):
+def classify(X,y,pipe,classifier_features):
+    
+    print ('')
+    print ('')
+    print('***** '+ classifier_features + ' *****')
+    print('')
 
-   
-    #X_train, X_test, y_train, y_test = train_test_split(X,y, test_size=0.20, random_state=1)
-
-
-    skf = StratifiedKFold(y_train, n_folds=10)
+    skf = StratifiedKFold(y_train, n_folds=10, random_state=1)
 
     scores = []
     confusion_matrix = np.zeros((10,10))
     for train_index, test_index in skf:
-        X_train_fold, X_test_fold = X_train[train_index], X_train[test_index]
-        y_train_fold, y_test_fold = y_train[train_index], y_train[test_index]
+        X_train_fold, X_test_fold = X[train_index], X[test_index]
+        y_train_fold, y_test_fold = y[train_index], y[test_index]
         pipe.fit(X_train_fold, y_train_fold)
         y_predict = pipe.predict(X_test_fold)
         scores.append(pipe.score(X_test_fold, y_test_fold))
@@ -49,26 +51,18 @@ def classify(X,y,pipe):
         for p,r in zip(y_predict, y_test_fold):
             confusion_matrix[p,r] = confusion_matrix[p,r] + 1
         
-    print('CV accuracy scores: %s' % scores)
-    print('CV accuracy: %.3f +/- %.3f' % (np.mean(scores),np.std(scores)))
+    
+    mean, sigma = np.mean(scores), np.std(scores)
+    
+    conf_int = stats.norm.interval(0.95, loc=mean, scale=sigma / np.sqrt(len(scores)))
+    print('Average CV accuracy: %.3f +/- %.3f' % (np.mean(scores),np.mean(scores)-conf_int[0]))
+    
+    print('CV 95 percent confidence interval:', conf_int)
     print(confusion_matrix)
 
 
-    '''
-    scores = cross_val_score(estimator=pipe, X = X_train, y=y_train, cv=10, n_jobs=1)
-    print('CV accuracy scores: %s' % scores)
-    print('CV accuracy: %.3f +/- %.3f' % (np.mean(scores),np.std(scores)))
-
-
-    pipe.fit(X_train, y_train)
-    print('Test Accuracy: %.3f' % pipe.score(X_test, y_test))
-    y_predict = pipe.predict(X_test)
-    confusion = confusion_matrix(y_true=y_test, y_pred=y_predict)
-    print(confusion)
-    '''
     confusion_normalized = confusion_matrix.astype('float') / confusion_matrix.sum(axis=1)[:, np.newaxis]
-    #print(confusion_normalized)
-
+    
     pylab.clf()
     pylab.matshow(confusion_normalized, fignum=False, cmap='Blues', vmin=0, vmax=1.0)
     ax = pylab.axes()
@@ -78,15 +72,20 @@ def classify(X,y,pipe):
     ax.xaxis.set_ticks_position("top")
     ax.set_yticks(range(len(genres)))
     ax.set_yticklabels(genres)
-    #pylab.title("Confusion Matrix")
+    pylab.title("Cross Validation Confusion Matrix for " + classifier_features)
     pylab.colorbar()
     pylab.grid(False)
-    pylab.xlabel('Predicted class')
-    pylab.ylabel('True class')
+    #pylab.xlabel('Predicted class')
+    #pylab.ylabel('True class')
     pylab.grid(False)
     pylab.show()
     
+    print ('')
     
+def train(X,y,X_test,y_test,pipe,classifier_features):
+    classify(X,y,pipe, classifier_features)
+    pipe.fit(X, y)
+    print('Test Accuracy %s: %.6f' % (classifier_features, pipe.score(X_test, y_test)) )
     
 df = pd.read_csv('train-fft-mfcc.data', header=None)
 df = df.dropna(axis=0)
@@ -97,39 +96,67 @@ y = df.iloc[:, 0].values
 
 X_train, X_test, y_train, y_test = train_test_split(X,y, test_size=0.20, random_state=1)
 
-#pipe = Pipeline([('scl', StandardScaler()), ('pca',PCA(n_components=10)) , ('clf', LogisticRegression(random_state=1))])
-#pipe = Pipeline([('scl', StandardScaler()), ('clf', LogisticRegression())])
-#pipe = Pipeline([('scl', StandardScaler()),('clf',SVC(kernel='linear', C=40.0, random_state=1))])
-#pipe = Pipeline([('clf', DecisionTreeClassifier(criterion='entropy',max_depth=50))])
-pipe = Pipeline([('clf', RandomForestClassifier(criterion='entropy',n_estimators=1000,n_jobs=-1))])
-#pipe = Pipeline([('scl', StandardScaler()),('clf', KNeighborsClassifier(n_neighbors=5, p=2, metric='minkowski'))])
-#pipe = Pipeline([('scl', StandardScaler()),('clf', GradientBoostingClassifier(n_estimators=100, learning_rate=1.0,max_depth=1, random_state=0)  )])
-#pipe = Pipeline([('scl', StandardScaler()),('clf', GaussianNB()  )])
-
-#classify(X,y,pipe)
-
 # Build a forest and compute the feature importances
-#X = preprocessing.scale(X)
-forest = ExtraTreesClassifier(n_estimators=250,
-                              random_state=0)
+forest = ExtraTreesClassifier(n_estimators=300,
+                              random_state=1)
 
 forest.fit(X_train, y_train)
 importances = forest.feature_importances_
 std = np.std([tree.feature_importances_ for tree in forest.estimators_],
              axis=0)
 indices = np.argsort(importances)[::-1]
-
-
 top_50 = indices[:50]
 
-X_train = X_train[:,top_50]
-print(X_train.shape)
-classify(X_train,y_train,pipe)
+pipe = Pipeline([('clf', RandomForestClassifier(criterion='entropy',n_estimators=3000,n_jobs=-1, random_state=1))])
 
-X_test = X_test[:,top_50]
+#First feature set is just the fft features, first 1000 features (0-999) listed in the training data
+X_train_fft, X_test_fft= X_train[:,:1000], X_test[:,:1000]
 
-pipe.fit(X_train, y_train)
-print('Test Accuracy: %.3f' % pipe.score(X_test, y_test))
+train(X_train_fft,y_train,X_test_fft,y_test,pipe, 'Random Forest (FFT)')
+#classify(X_train_fft,y_train,pipe, "Cross Validation Confusion Matrix for Random Forest (FFT)")
+#pipe.fit(X_train_fft, y_train)
+#print('Test Accuracy Random Forest (FFT Features): %.6f' % pipe.score(X_test_fft, y_test))
+
+#Second feature set is just the 13 mfcc features,  features 1000-1012 listed in the training data
+X_train_mfcc, X_test_mfcc= X_train[:,1000:1013], X_test[:,1000:1013]
+train(X_train_mfcc,y_train,X_test_mfcc,y_test,pipe, 'Random Forest (MFCC)')
+#classify(X_train_mfcc,y_train,pipe, "Cross Validation Confusion Matrix for Random Forest (MFCC)")
+#pipe.fit(X_train_mfcc, y_train)
+#print('Test Accuracy Random Forest (MFCC Features): %.6f' % pipe.score(X_test_mfcc, y_test))
+
+
+#Third feature set are the strongest 50 features from the set of FFT and MFCC features
+X_train_top50, X_test_top50 = X_train[:,top_50], X_test[:,top_50]
+train(X_train_top50,y_train,X_test_top50,y_test,pipe, 'Random Forest (Top 50 FFT and MFCC)')
+#classify(X_train_top50,y_train,pipe, "Cross Validation Confusion Matrix for Random Forest (Top 50 FFT and MFCC)")
+#pipe.fit(X_train_top50, y_train)
+#print('Test Accuracy Random Forest (Top 50): %.6f' % pipe.score(X_test_top50, y_test))
+
+
+pipe = Pipeline([('scl', StandardScaler()),('clf',SVC(kernel='rbf', C=100.0, random_state=1))])
+
+#First feature set is just the fft features, first 1000 features (0-999) listed in the training data
+X_train_fft, X_test_fft= X_train[:,:999], X_test[:,:999]
+train(X_train_fft,y_train,X_test_fft,y_test,pipe, 'SVM (FFT)')
+#classify(X_train_fft,y_train,pipe, "Cross Validation Confusion Matrix for SVM (FFT)")
+#pipe.fit(X_train_fft, y_train)
+#print('Test Accuracy SVM (FFT Features): %.6f' % pipe.score(X_test_fft, y_test))
+
+#Second feature set is just the 13 mfcc features,  features 1000-1012 listed in the training data
+X_train_mfcc, X_test_mfcc= X_train[:,1000:1013], X_test[:,1000:1013]
+train(X_train_mfcc,y_train,X_test_mfcc,y_test,pipe, 'SVM (MFCC)')
+#classify(X_train_mfcc,y_train,pipe, "Cross Validation Confusion Matrix for SVM (MFCC)")
+#pipe.fit(X_train_mfcc, y_train)
+#print('Test Accuracy SVM (MFCC Features): %.6f' % pipe.score(X_test_mfcc, y_test))
+
+
+#Third feature set are the strongest 50 features from the set of FFT and MFCC features
+X_train_top50, X_test_top50 = X_train[:,top_50], X_test[:,top_50]
+train(X_train_top50,y_train,X_test_top50,y_test,pipe, 'SVM (Top 50 FFT and MFCC)')
+#classify(X_train_top50,y_train,pipe, "Cross Validation Confusion Matrix for SVM (Top50 FFT and MFCC)")
+#pipe.fit(X_train_top50, y_train)
+#print('Test Accuracy SVM (Top 50): %.3f' % pipe.score(X_test_top50, y_test))
+
 
 '''
 # Print the feature ranking
