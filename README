@@ -1,0 +1,16 @@
+Source:
+  extractFeatures.py - extracts the fft and mfcc featrues for train and validation data
+  classify.py - all the code for classification, feature 3 extraction, and confusion matrix generation
+Data:
+  train data should be in a folder called "genres"
+  validation data should be in a folder called "validation"
+
+To run:
+  python2 extractFeatures.py (produces train-fft-mfcc.data and validation-fft-mfcc.data files)    
+  python3 classify.py (produces 6 prediction files as well as confusion matrix and top 50 chart)
+
+Predition files:
+  There are 6 prediction files produced for each classifier/feature set combination.  The file names describe the classifier and feature set that was used to produc the file.  Each prediction file has the file name ("." replaced with "_" as shown in project write-up) followed by the predicted class.
+
+References:
+  sklearn was heavily used as two books "Python Machine Learning" and "Building Machine Learning Systems with Python" were referenced
