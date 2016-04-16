@@ -30,7 +30,7 @@ pd.set_option('mode.use_inf_as_null', True)
 genres = ["blues","classical","country","disco","hiphop","jazz","metal","pop","reggae","rock"]
 
 
-def classify(X,y,pipe,classifier_features):
+def train(X,y,pipe,classifier_features):
     
     print ('')
     print ('')
@@ -55,7 +55,7 @@ def classify(X,y,pipe,classifier_features):
     mean, sigma = np.mean(scores), np.std(scores)
     
     conf_int = stats.norm.interval(0.95, loc=mean, scale=sigma / np.sqrt(len(scores)))
-    print('Average CV accuracy: %.3f +/- %.3f' % (np.mean(scores),np.mean(scores)-conf_int[0]))
+    print('Average CV accuracy: %.6f +/- %.6f' % (np.mean(scores),np.mean(scores)-conf_int[0]))
     
     print('CV 95 percent confidence interval:', conf_int)
     print(confusion_matrix)
@@ -79,22 +79,37 @@ def classify(X,y,pipe,classifier_features):
     #pylab.ylabel('True class')
     pylab.grid(False)
     pylab.show()
-    
     print ('')
     
-def train(X,y,X_test,y_test,pipe,classifier_features):
-    classify(X,y,pipe, classifier_features)
+    
+def classify(X,y,X_test,y_test,pipe,classifier_features):
+    train(X,y,pipe, classifier_features)
     pipe.fit(X, y)
     print('Test Accuracy %s: %.6f' % (classifier_features, pipe.score(X_test, y_test)) )
     
+def validate(X,y,X_validate, validate_file_names, pipe, file_name):
+    with open(file_name, "w") as f:
+        pipe.fit(X,y)
+        for i in range(0,len(X_validate)):
+            sample = X_validate[i,:].reshape(1,-1)
+            prediction = pipe.predict(sample)
+            line = str(validate_file_names[i]) + " "  + str(genres[int(prediction[0])]) + "\n"
+            f.write(line)
+
 df = pd.read_csv('train-fft-mfcc.data', header=None)
 df = df.dropna(axis=0)
 
 X = df.iloc[:, 1:].values
-
 y = df.iloc[:, 0].values
 
 X_train, X_test, y_train, y_test = train_test_split(X,y, test_size=0.20, random_state=1)
+
+df_validate = pd.read_csv('validation-fft-mfcc.data', header=None)
+df_validate = df_validate.dropna(axis=0)
+
+X_validate = df_validate.iloc[:, 1:].values
+validate_file_names = df_validate.iloc[:, 0].values
+
 
 # Build a forest and compute the feature importances
 forest = ExtraTreesClassifier(n_estimators=300,
@@ -107,72 +122,60 @@ std = np.std([tree.feature_importances_ for tree in forest.estimators_],
 indices = np.argsort(importances)[::-1]
 top_50 = indices[:50]
 
+
 pipe = Pipeline([('clf', RandomForestClassifier(criterion='entropy',n_estimators=3000,n_jobs=-1, random_state=1))])
 
 #First feature set is just the fft features, first 1000 features (0-999) listed in the training data
 X_train_fft, X_test_fft= X_train[:,:1000], X_test[:,:1000]
-
-train(X_train_fft,y_train,X_test_fft,y_test,pipe, 'Random Forest (FFT)')
-#classify(X_train_fft,y_train,pipe, "Cross Validation Confusion Matrix for Random Forest (FFT)")
-#pipe.fit(X_train_fft, y_train)
-#print('Test Accuracy Random Forest (FFT Features): %.6f' % pipe.score(X_test_fft, y_test))
+classify(X_train_fft,y_train,X_test_fft,y_test,pipe, 'Random Forest (FFT)')
+validate(X[:,:1000],y,X_validate[:,:1000],validate_file_names,pipe,'predictions-fft-random-forest.txt')
 
 #Second feature set is just the 13 mfcc features,  features 1000-1012 listed in the training data
 X_train_mfcc, X_test_mfcc= X_train[:,1000:1013], X_test[:,1000:1013]
-train(X_train_mfcc,y_train,X_test_mfcc,y_test,pipe, 'Random Forest (MFCC)')
-#classify(X_train_mfcc,y_train,pipe, "Cross Validation Confusion Matrix for Random Forest (MFCC)")
-#pipe.fit(X_train_mfcc, y_train)
-#print('Test Accuracy Random Forest (MFCC Features): %.6f' % pipe.score(X_test_mfcc, y_test))
-
+classify(X_train_mfcc,y_train,X_test_mfcc,y_test,pipe, 'Random Forest (MFCC)')
+validate(X[:,1000:1013],y,X_validate[:,1000:1013],validate_file_names,pipe,'predictions-mfcc-random-forest.txt')
 
 #Third feature set are the strongest 50 features from the set of FFT and MFCC features
 X_train_top50, X_test_top50 = X_train[:,top_50], X_test[:,top_50]
-train(X_train_top50,y_train,X_test_top50,y_test,pipe, 'Random Forest (Top 50 FFT and MFCC)')
-#classify(X_train_top50,y_train,pipe, "Cross Validation Confusion Matrix for Random Forest (Top 50 FFT and MFCC)")
-#pipe.fit(X_train_top50, y_train)
-#print('Test Accuracy Random Forest (Top 50): %.6f' % pipe.score(X_test_top50, y_test))
-
+classify(X_train_top50,y_train,X_test_top50,y_test,pipe, 'Random Forest (Top 50 FFT and MFCC)')
+validate(X[:,top_50],y,X_validate[:,top_50],validate_file_names,pipe,'predictions-top50-random-forest.txt')
 
 pipe = Pipeline([('scl', StandardScaler()),('clf',SVC(kernel='rbf', C=100.0, random_state=1))])
 
 #First feature set is just the fft features, first 1000 features (0-999) listed in the training data
 X_train_fft, X_test_fft= X_train[:,:999], X_test[:,:999]
-train(X_train_fft,y_train,X_test_fft,y_test,pipe, 'SVM (FFT)')
-#classify(X_train_fft,y_train,pipe, "Cross Validation Confusion Matrix for SVM (FFT)")
-#pipe.fit(X_train_fft, y_train)
-#print('Test Accuracy SVM (FFT Features): %.6f' % pipe.score(X_test_fft, y_test))
+classify(X_train_fft,y_train,X_test_fft,y_test,pipe, 'SVM (FFT)')
+validate(X[:,:1000],y,X_validate[:,:1000],validate_file_names,pipe,'predictions-fft-svm.txt')
 
 #Second feature set is just the 13 mfcc features,  features 1000-1012 listed in the training data
 X_train_mfcc, X_test_mfcc= X_train[:,1000:1013], X_test[:,1000:1013]
-train(X_train_mfcc,y_train,X_test_mfcc,y_test,pipe, 'SVM (MFCC)')
-#classify(X_train_mfcc,y_train,pipe, "Cross Validation Confusion Matrix for SVM (MFCC)")
-#pipe.fit(X_train_mfcc, y_train)
-#print('Test Accuracy SVM (MFCC Features): %.6f' % pipe.score(X_test_mfcc, y_test))
-
+classify(X_train_mfcc,y_train,X_test_mfcc,y_test,pipe, 'SVM (MFCC)')
+validate(X[:,1000:1013],y,X_validate[:,1000:1013],validate_file_names,pipe,'predictions-mfcc-svm.txt')
 
 #Third feature set are the strongest 50 features from the set of FFT and MFCC features
 X_train_top50, X_test_top50 = X_train[:,top_50], X_test[:,top_50]
-train(X_train_top50,y_train,X_test_top50,y_test,pipe, 'SVM (Top 50 FFT and MFCC)')
-#classify(X_train_top50,y_train,pipe, "Cross Validation Confusion Matrix for SVM (Top50 FFT and MFCC)")
-#pipe.fit(X_train_top50, y_train)
-#print('Test Accuracy SVM (Top 50): %.3f' % pipe.score(X_test_top50, y_test))
+classify(X_train_top50,y_train,X_test_top50,y_test,pipe, 'SVM (Top 50 FFT and MFCC)')
+validate(X[:,top_50],y,X_validate[:,top_50],validate_file_names,pipe,'predictions-top50-svm.txt')
 
 
-'''
+                                   
 # Print the feature ranking
+print('')
 print("Feature ranking:")
 
-for f in range(X.shape[1]):
+#for f in range(X.shape[1]):
+for f in range(0,50):
     print("%d. feature %d (%f)" % (f + 1, indices[f], importances[indices[f]]))
 
 # Plot the feature importances of the forest
 plt.figure()
-plt.title("Feature importances")
-plt.bar(range(X.shape[1]), importances[indices],
-       color="r", yerr=std[indices], align="center")
-plt.xticks(range(X.shape[1]), indices)
-plt.xlim([-1, X.shape[1]])
+plt.title("Feature strength")
+plt.bar(range(0,50), importances[indices[:50]],
+       color="lightblue",  align="center")
+plt.xticks(range(0,50), indices[:50],rotation=90)
+plt.xlim([-1, 50])
+plt.tight_layout()
 plt.show()
-'''
+
 
 

@@ -60,9 +60,9 @@ with open("train-fft-mfcc.data", "w") as f:
         if r % 10 == 0:
             print r
             
-            
+      
 validate_dir = 'validation'
-
+validation_file_names = []
 count = 0
 for fileName in os.listdir(validate_dir):
     if fileName.endswith(".wav"):
@@ -72,13 +72,9 @@ for fileName in os.listdir(validate_dir):
         ceps, mspec, spec = mfcc(X)
         numCeps = len(ceps)
         x = np.mean(ceps[int(numCeps*1/10):int(numCeps*9/10)], axis=0)
-            
-        #y, sr = librosa.load(dir + "/" + fileName)
-        #energyValues = librosa.feature.rmse(y=y)
-        #energy = np.zeros((1,))
-        #energy[0] =  np.mean(energyValues[0,:])
-            
-        
+        tokens = fileName.split('.')
+        fileId = tokens[0] + "_" + tokens[1]    
+        validation_file_names.append(fileId)
         validationData[count] = np.concatenate((fft_features,x)) 
         #data[count,1:] = x 
             
@@ -89,7 +85,7 @@ for fileName in os.listdir(validate_dir):
             
 with open("validation-fft-mfcc.data", "w") as f:
     for r in range (0,numberOfValidationSamples):
-        line = ''
+        line = validation_file_names[r] + ','
         for c in range (0,numberOfValidationFeatures):
             line = line + str(validationData[r,c])
             if c != (numberOfValidationFeatures -1):
